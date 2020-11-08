@@ -12,15 +12,18 @@ from .models import EmailSubscriber
 
 @admin.register(EmailSubscriber)
 class EmailSubscriberAdmin(admin.ModelAdmin):
+    date_hierarchy = "created_at"
     list_display = ("id", "email", "created_at")
     ordering = ("-created_at",)
 
     # Inject chart data on page load in the ChangeList view
     def changelist_view(self, request, extra_context=None):
-        chart_data = self.chart_data()
+        response = super().changelist_view(request, extra_context=extra_context)
+        queryset = response.context_data["cl"].queryset
+        chart_data = self.chart_data(queryset)
         as_json = json.dumps(list(chart_data), cls=DjangoJSONEncoder)
-        extra_context = extra_context or {"chart_data": as_json}
-        return super().changelist_view(request, extra_context=extra_context)
+        response.context_data.update({"chart_data": as_json})
+        return response
 
     def get_urls(self):
         urls = super().get_urls()
@@ -34,12 +37,13 @@ class EmailSubscriberAdmin(admin.ModelAdmin):
     # JSON endpoint for generating chart data that is used for dynamic loading
     # via JS.
     def chart_data_endpoint(self, request):
-        chart_data = self.chart_data()
+        chart_data = self.chart_data(EmailSubscriber.objects)
+
         return JsonResponse(list(chart_data), safe=False)
 
-    def chart_data(self):
+    def chart_data(self, queryset):
         return (
-            EmailSubscriber.objects.annotate(date=TruncDay("created_at"))
+            queryset.annotate(date=TruncDay("created_at"))
             .values("date")
             .annotate(y=Count("id"))
             .order_by("-date")
